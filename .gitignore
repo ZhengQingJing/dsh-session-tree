@@ -1,0 +1,15 @@
+lib/
+node_modules/
+.pnpm-store/
+coverage/
+*.tgz
+*.tsbuildinfo
+.env
+.env.*
+.npmrc
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store

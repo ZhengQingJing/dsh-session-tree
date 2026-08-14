@@ -1,0 +1,71 @@
+/** Dictionary namespace owned by the session-tree plugin. */
+export const NS = 'sessionTree'
+
+/** Simplified Chinese dictionary; its keys define the namespace contract. */
+export const zh = {
+  'view.label': '版本树',
+  'title': '对话版本树',
+  'intro': '每次回溯都会创建新的子会话，原会话及其后续内容保持不变。',
+  'safety': '这里只回溯对话与模型上下文，不会撤销文件修改、命令、网络请求或其他外部操作。',
+  'tree.heading': '当前会话家族',
+  'tree.empty': '当前没有可展示的会话节点。',
+  'tree.current': '当前',
+  'tree.root': '起点',
+  'tree.fork': '分支',
+  'tree.subagent': '子代理',
+  'tree.orphan': '父会话缺失',
+  'tree.cycle': '谱系循环（只读）',
+  'tree.running': '运行中',
+  'tree.blank': '空会话',
+  'tree.more': '再显示 {count} 个节点',
+  'tree.limited': '为避免大谱系阻塞页面，当前只渲染前 {count} 个节点。',
+  'tree.openError': '无法打开该会话。它可能是已失联的子代理节点。',
+  'diagnostics': '检测到 {count} 个谱系异常；异常边仅在视图中隔离，持久记录没有被修改。',
+  'checkpoints.heading': '可分支的已完成轮次',
+  'checkpoints.empty': '当前加载窗口中还没有已完成轮次。',
+  'checkpoints.turn': '第 {turn} 轮',
+  'checkpoints.seq': '事件 #{seq}',
+  'checkpoints.branch': '从这里创建分支',
+  'checkpoints.branching': '正在创建…',
+  'checkpoints.moreLoaded': '再显示 {count} 个已加载轮次',
+  'checkpoints.loadOlder': '加载更早轮次',
+  'checkpoints.loadingOlder': '正在加载…',
+  'checkpoints.loadError': '更早的历史加载失败，现有记录没有受到影响。',
+  'fork.uncertain': '创建分支时没有收到完整确认。为避免重复分支，插件不会自动重试；请先检查左侧树中是否已经出现新会话。',
+} as const
+
+/** English dictionary, key-identical to the Chinese source of truth. */
+export const en: Record<SessionTreeLocaleKey, string> = {
+  'view.label': 'Branches',
+  'title': 'Conversation branches',
+  'intro': 'Rewinding always creates a child session. The original session and its later output remain unchanged.',
+  'safety': 'This rewinds conversation and model context only. It does not undo file changes, commands, network requests, or other external effects.',
+  'tree.heading': 'Current session family',
+  'tree.empty': 'There are no session nodes to display.',
+  'tree.current': 'current',
+  'tree.root': 'root',
+  'tree.fork': 'branch',
+  'tree.subagent': 'subagent',
+  'tree.orphan': 'missing parent',
+  'tree.cycle': 'lineage cycle (read only)',
+  'tree.running': 'running',
+  'tree.blank': 'empty',
+  'tree.more': 'Show {count} more nodes',
+  'tree.limited': 'Only the first {count} nodes are rendered to keep a large lineage responsive.',
+  'tree.openError': 'This session could not be opened. It may be a detached subagent node.',
+  'diagnostics': '{count} lineage issue(s) were isolated in this view; no durable records were changed.',
+  'checkpoints.heading': 'Completed turns available for branching',
+  'checkpoints.empty': 'No completed turns are present in the loaded history window.',
+  'checkpoints.turn': 'Turn {turn}',
+  'checkpoints.seq': 'event #{seq}',
+  'checkpoints.branch': 'Branch from here',
+  'checkpoints.branching': 'Creating…',
+  'checkpoints.moreLoaded': 'Show {count} more loaded turns',
+  'checkpoints.loadOlder': 'Load earlier turns',
+  'checkpoints.loadingOlder': 'Loading…',
+  'checkpoints.loadError': 'Earlier history could not be loaded. Existing records were not affected.',
+  'fork.uncertain': 'The branch operation did not receive a complete confirmation. It will not be retried automatically; first check the tree for a newly created session.',
+}
+
+/** Key domain of this plugin's locale namespace. */
+export type SessionTreeLocaleKey = keyof typeof zh

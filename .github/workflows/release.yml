@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate tag, package version, and changelog
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+
+          const tag = process.env.RELEASE_TAG;
+          if (!tag || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+            throw new Error(`Expected a semantic-version tag beginning with v; received ${tag}`);
+          }
+
+          const version = tag.slice(1);
+          const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+          if (packageVersion !== version) {
+            throw new Error(`Tag ${tag} does not match package.json version ${packageVersion}`);
+          }
+
+          const lines = readFileSync("CHANGELOG.md", "utf8").split(/\r?\n/);
+          const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const headingPattern = new RegExp(`^## \\[${escapedVersion}\\](?: - \\d{4}-\\d{2}-\\d{2})?$`);
+          const start = lines.findIndex((line) => headingPattern.test(line));
+          if (start === -1) {
+            throw new Error(`CHANGELOG.md has no release heading for ${version}`);
+          }
+
+          let end = lines.length;
+          for (let index = start + 1; index < lines.length; index += 1) {
+            if (/^## \[/.test(lines[index])) {
+              end = index;
+              break;
+            }
+          }
+
+          const notes = lines.slice(start + 1, end).join("\n").trim();
+          if (!notes) {
+            throw new Error(`CHANGELOG.md release notes for ${version} are empty`);
+          }
+          writeFileSync("release-notes.md", `${notes}\n`);
+          NODE
+
+      - name: Verify source and bundle
+        run: pnpm run verify
+
+      - name: Pack once and generate checksums
+        shell: bash
+        run: |
+          mkdir release
+          pnpm pack --pack-destination release
+          mapfile -t packages < <(find release -maxdepth 1 -type f -name '*.tgz' -print)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one package archive, found ${#packages[@]}" >&2
+            exit 1
+          fi
+          package_name=$(basename "${packages[0]}")
+          (cd release && sha256sum "$package_name" > SHA256SUMS)
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            release/*.tgz \
+            release/SHA256SUMS \
+            --verify-tag \
+            --prerelease \
+            --title "dsh-session-tree ${{ github.ref_name }}" \
+            --notes-file release-notes.md

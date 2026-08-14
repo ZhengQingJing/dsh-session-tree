@@ -1,0 +1,120 @@
+{
+  "name": "dsh-session-tree",
+  "version": "0.1.0-beta.1",
+  "description": "Git-like immutable session lineage for DeepSeek Harness",
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "deepseek-harness",
+    "session-management",
+    "conversation",
+    "typescript"
+  ],
+  "homepage": "https://github.com/ZhengQingJing/dsh-session-tree",
+  "bugs": {
+    "url": "https://github.com/ZhengQingJing/dsh-session-tree/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZhengQingJing/dsh-session-tree.git"
+  },
+  "author": {
+    "name": "ZhengQingJing",
+    "url": "https://github.com/ZhengQingJing"
+  },
+  "contributors": [
+    {
+      "name": "ZeXin Lin",
+      "url": "https://github.com/webDrag0n"
+    }
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs/**"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run clean && tsc -p tsconfig.json && tsdown",
+    "bundle": "tsdown",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "clean": "node scripts/clean.mjs",
+    "pack:check": "pnpm pack --dry-run",
+    "prepare": "pnpm run build",
+    "release:check": "node scripts/check-release.mjs",
+    "test": "vitest run",
+    "verify": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:bundle && pnpm run release:check",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.5 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.5 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.5 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.5 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.5 || 0.1.0-rc.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "jsdom": "29.1.1",
+    "lightningcss": "1.32.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "0.22.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.8"
+  }
+}
