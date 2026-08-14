@@ -6,10 +6,14 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: dsh-session-tree-release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +23,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.19.0
+          node-version: 24
+          package-manager-cache: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -71,9 +76,12 @@ jobs:
       - name: Verify source and bundle
         run: pnpm run verify
 
-      - name: Pack once and generate checksums
+      - name: Pack once, verify the archive, and generate checksums
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           mkdir release
           pnpm pack --pack-destination release
           mapfile -t packages < <(find release -maxdepth 1 -type f -name '*.tgz' -print)
@@ -81,17 +89,481 @@ jobs:
             echo "Expected exactly one package archive, found ${#packages[@]}" >&2
             exit 1
           fi
-          package_name=$(basename "${packages[0]}")
+          archive=${packages[0]}
+          package_name=$(basename "$archive")
+          node --input-type=module - "$archive" <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+
+          const archive = process.argv[2];
+          const source = JSON.parse(readFileSync("package.json", "utf8"));
+          const packed = JSON.parse(execFileSync("tar", ["-xOf", archive, "package/package.json"], {
+            encoding: "utf8",
+          }));
+          const expectedVersion = process.env.RELEASE_TAG.slice(1);
+          if (packed.name !== source.name || packed.version !== source.version) {
+            throw new Error(`Packed identity ${packed.name}@${packed.version} does not match package.json ${source.name}@${source.version}`);
+          }
+          if (packed.version !== expectedVersion) {
+            throw new Error(`Packed version ${packed.version} does not match tag ${process.env.RELEASE_TAG}`);
+          }
+          NODE
           (cd release && sha256sum "$package_name" > SHA256SUMS)
 
-      - name: Create GitHub prerelease
+      - name: Transfer verified release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-release-${{ github.sha }}
+          path: |
+            release/*.tgz
+            release/SHA256SUMS
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Set up Node.js for trusted publishing
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install the pinned npm CLI
+        run: npm install --global npm@11.18.0 --ignore-scripts --no-audit --no-fund
+
+      - name: Verify npm supports trusted publishing
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+
+          const rawVersion = execFileSync("npm", ["--version"], { encoding: "utf8" }).trim();
+          if (rawVersion !== "11.18.0") {
+            throw new Error(`Expected pinned npm 11.18.0; received ${rawVersion}`);
+          }
+
+          console.log(`Using npm ${rawVersion} for trusted publishing`);
+          NODE
+
+      - name: Download verified release inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-release-${{ github.sha }}
+          path: .
+
+      - name: Revalidate the transferred archive
+        id: pack
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum --check --strict SHA256SUMS)
+          mapfile -t packages < <(find release -maxdepth 1 -type f -name '*.tgz' -print)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one package archive, found ${#packages[@]}" >&2
+            exit 1
+          fi
+
+          archive=./${packages[0]}
+          if [[ "$archive" != ./release/*.tgz ]]; then
+            echo "Package archive escaped the expected ./release directory: $archive" >&2
+            exit 1
+          fi
+          node --input-type=module - "$archive" <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { basename } from "node:path";
+
+          const archive = process.argv[2];
+          const packed = JSON.parse(execFileSync("tar", ["-xOf", archive, "package/package.json"], {
+            encoding: "utf8",
+          }));
+          const tag = process.env.RELEASE_TAG;
+          if (!tag || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+            throw new Error(`Expected a semantic-version tag beginning with v; received ${tag}`);
+          }
+          if (packed.name !== "dsh-session-tree" || packed.version !== tag.slice(1)) {
+            throw new Error(`Packed identity ${packed.name}@${packed.version} does not match release tag ${tag}`);
+          }
+          const expectedFilename = `${packed.name}-${packed.version}.tgz`;
+          if (basename(archive) !== expectedFilename) {
+            throw new Error(`Unexpected archive filename ${basename(archive)}; expected ${expectedFilename}`);
+          }
+          NODE
+
+          if [[ "$archive" == *$'\n'* || "$archive" == *$'\r'* ]]; then
+            echo "Package archive path contains a line break" >&2
+            exit 1
+          fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect the npm registry for a recoverable prior publish
+        id: registry
+        env:
+          PACKAGE_ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { appendFileSync, readFileSync } from "node:fs";
+          import { createHash } from "node:crypto";
+
+          const archive = process.env.PACKAGE_ARCHIVE;
+          const packed = JSON.parse(execFileSync("tar", ["-xOf", archive, "package/package.json"], {
+            encoding: "utf8",
+          }));
+          const bytes = readFileSync(archive);
+          const expectedIntegrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+          const expectedShasum = createHash("sha1").update(bytes).digest("hex");
+          const url = `https://registry.npmjs.org/${encodeURIComponent(packed.name)}/${encodeURIComponent(packed.version)}`;
+          const response = await fetch(url, {
+            headers: { accept: "application/json" },
+            signal: AbortSignal.timeout(15_000),
+          });
+
+          if (response.status === 404) {
+            appendFileSync(process.env.GITHUB_OUTPUT, "already_published=false\n");
+            console.log(`${packed.name}@${packed.version} is not published yet`);
+          } else {
+            if (!response.ok) {
+              throw new Error(`npm registry lookup failed with HTTP ${response.status}`);
+            }
+            const metadata = await response.json();
+            if (metadata.name !== packed.name || metadata.version !== packed.version) {
+              throw new Error(`npm registry returned unexpected identity ${metadata.name}@${metadata.version}`);
+            }
+            if (metadata.dist?.integrity !== expectedIntegrity || metadata.dist?.shasum !== expectedShasum) {
+              throw new Error(`npm already contains ${packed.name}@${packed.version}, but its tarball digest differs`);
+            }
+            appendFileSync(process.env.GITHUB_OUTPUT, "already_published=true\n");
+            console.log(`npm already contains the byte-identical ${packed.name}@${packed.version}; publish recovery is safe`);
+          }
+          NODE
+
+      - name: Prepare an unpublished GitHub draft release
+        id: github_release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PACKAGE_ARCHIVE: ${{ steps.pack.outputs.archive }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            release/*.tgz \
+          set -euo pipefail
+
+          verify_release_assets() {
+            local expected_state=$1
+            local package_name
+            local release_json
+            local verification_dir
+            package_name=$(basename "$PACKAGE_ARCHIVE")
+            release_json=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,assets)
+            RELEASE_JSON="$release_json" PACKAGE_NAME="$package_name" EXPECTED_STATE="$expected_state" \
+              node --input-type=module <<'NODE'
+          const release = JSON.parse(process.env.RELEASE_JSON);
+          const expectedState = process.env.EXPECTED_STATE;
+          const actualState = release.isDraft ? "draft" : "published";
+          if (actualState !== expectedState) {
+            throw new Error(`Expected ${expectedState} release; received ${actualState}`);
+          }
+          if (!release.isPrerelease) {
+            throw new Error("Release is not marked as a prerelease");
+          }
+          const expectedAssets = [process.env.PACKAGE_NAME, "SHA256SUMS"].sort();
+          const actualAssets = release.assets.map(({ name }) => name).sort();
+          if (JSON.stringify(actualAssets) !== JSON.stringify(expectedAssets)) {
+            throw new Error(`Unexpected release assets: ${actualAssets.join(", ")}`);
+          }
+          NODE
+
+            verification_dir="$RUNNER_TEMP/dsh-session-tree-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            mkdir -p "$verification_dir"
+            gh release download "$RELEASE_TAG" \
+              --dir "$verification_dir" \
+              --pattern "$package_name" \
+              --pattern SHA256SUMS \
+              --clobber
+            cmp --silent "$PACKAGE_ARCHIVE" "$verification_dir/$package_name" || {
+              echo "GitHub Release package asset differs from the verified archive" >&2
+              return 1
+            }
+            cmp --silent release/SHA256SUMS "$verification_dir/SHA256SUMS" || {
+              echo "GitHub Release checksum asset differs from the verified checksum" >&2
+              return 1
+            }
+          }
+
+          if gh release create "$RELEASE_TAG" \
+            "$PACKAGE_ARCHIVE" \
             release/SHA256SUMS \
             --verify-tag \
+            --draft \
             --prerelease \
-            --title "dsh-session-tree ${{ github.ref_name }}" \
-            --notes-file release-notes.md
+            --title "dsh-session-tree $RELEASE_TAG" \
+            --notes-file release-notes.md; then
+            verify_release_assets draft
+            echo "already_public=false" >> "$GITHUB_OUTPUT"
+            echo "Created draft release $RELEASE_TAG"
+          else
+            is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)
+            if [[ "$is_draft" == "false" ]]; then
+              verify_release_assets published
+              echo "already_public=true" >> "$GITHUB_OUTPUT"
+              echo "Release $RELEASE_TAG is already public and byte-identical; no GitHub mutation is needed"
+            elif [[ "$is_draft" == "true" ]]; then
+              gh release upload "$RELEASE_TAG" \
+                "$PACKAGE_ARCHIVE" \
+                release/SHA256SUMS \
+                --clobber
+              gh release edit "$RELEASE_TAG" \
+                --prerelease \
+                --title "dsh-session-tree $RELEASE_TAG" \
+                --notes-file release-notes.md
+              verify_release_assets draft
+              echo "already_public=false" >> "$GITHUB_OUTPUT"
+              echo "Reused and refreshed draft release $RELEASE_TAG"
+            else
+              echo "Release $RELEASE_TAG returned an invalid isDraft value: $is_draft" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Publish the verified archive to npm with OIDC
+        if: steps.registry.outputs.already_published != 'true'
+        env:
+          PACKAGE_ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: npm publish "$PACKAGE_ARCHIVE" --access public --tag next --provenance --ignore-scripts
+
+      - name: Verify npm release identity and provenance
+        env:
+          ALREADY_PUBLISHED: ${{ steps.registry.outputs.already_published }}
+          PACKAGE_ARCHIVE: ${{ steps.pack.outputs.archive }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+          import { createHash } from "node:crypto";
+          import { setTimeout as delay } from "node:timers/promises";
+
+          const archive = process.env.PACKAGE_ARCHIVE;
+          const packed = JSON.parse(execFileSync("tar", ["-xOf", archive, "package/package.json"], {
+            encoding: "utf8",
+          }));
+          const bytes = readFileSync(archive);
+          const expectedIntegrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+          const expectedSha512Hex = createHash("sha512").update(bytes).digest("hex");
+          const expectedShasum = createHash("sha1").update(bytes).digest("hex");
+          const packumentUrl = `https://registry.npmjs.org/${encodeURIComponent(packed.name)}`;
+          const expectedAttestationUrl = `https://registry.npmjs.org/-/npm/v1/attestations/${packed.name}@${packed.version}`;
+          const expectedRepository = "https://github.com/ZhengQingJing/dsh-session-tree";
+          const expectedWorkflowPath = ".github/workflows/release.yml";
+          const expectedRef = `refs/tags/${process.env.RELEASE_TAG}`;
+          const expectedDependencyPrefix = `git+${expectedRepository}@`;
+          const expectedPurl = `pkg:npm/${packed.name}@${packed.version}`;
+          const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+          const failMismatch = (message) => {
+            const error = new Error(message);
+            error.retryable = false;
+            throw error;
+          };
+
+          const requireEqual = (actual, expected, label) => {
+            if (actual !== expected) {
+              failMismatch(`${label} mismatch: expected ${expected}; received ${actual}`);
+            }
+          };
+
+          const parseSemver = (version) => {
+            const match = semverPattern.exec(version);
+            if (!match) failMismatch(`npm next dist-tag is not valid SemVer: ${version}`);
+            return {
+              core: match.slice(1, 4),
+              prerelease: match[4]?.split(".") ?? null,
+            };
+          };
+
+          const compareNumericIdentifier = (left, right) => {
+            if (left.length !== right.length) return left.length - right.length;
+            if (left === right) return 0;
+            return left < right ? -1 : 1;
+          };
+
+          const compareSemver = (leftVersion, rightVersion) => {
+            const left = parseSemver(leftVersion);
+            const right = parseSemver(rightVersion);
+            for (let index = 0; index < 3; index += 1) {
+              const comparison = compareNumericIdentifier(left.core[index], right.core[index]);
+              if (comparison !== 0) return comparison;
+            }
+            if (left.prerelease === null) return right.prerelease === null ? 0 : 1;
+            if (right.prerelease === null) return -1;
+            const length = Math.max(left.prerelease.length, right.prerelease.length);
+            for (let index = 0; index < length; index += 1) {
+              const leftPart = left.prerelease[index];
+              const rightPart = right.prerelease[index];
+              if (leftPart === undefined) return -1;
+              if (rightPart === undefined) return 1;
+              if (leftPart === rightPart) continue;
+              const leftNumeric = /^\d+$/.test(leftPart);
+              const rightNumeric = /^\d+$/.test(rightPart);
+              if (leftNumeric && rightNumeric) return compareNumericIdentifier(leftPart, rightPart);
+              if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+              return leftPart < rightPart ? -1 : 1;
+            }
+            return 0;
+          };
+
+          const verifyProvenance = async (metadata) => {
+            if (!metadata._npmUser?.trustedPublisher?.id || !metadata.dist?.attestations?.url) {
+              const error = new Error("npm Trusted Publisher metadata is not available yet");
+              error.retryable = true;
+              throw error;
+            }
+            requireEqual(metadata._npmUser?.trustedPublisher?.id, "github", "Trusted Publisher");
+            if (!metadata.dist?.attestations?.provenance?.predicateType) {
+              const error = new Error("npm provenance metadata is not available yet");
+              error.retryable = true;
+              throw error;
+            }
+            requireEqual(
+              metadata.dist?.attestations?.provenance?.predicateType,
+              "https://slsa.dev/provenance/v1",
+              "provenance predicate type",
+            );
+            requireEqual(metadata.dist?.attestations?.url, expectedAttestationUrl, "attestation URL");
+
+            const response = await fetch(expectedAttestationUrl, {
+              headers: { accept: "application/json" },
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (!response.ok) {
+              const error = new Error(`npm attestation lookup failed with HTTP ${response.status}`);
+              error.retryable = response.status === 404 || response.status >= 500;
+              throw error;
+            }
+
+            const document = await response.json();
+            const provenance = document.attestations?.find(
+              ({ predicateType }) => predicateType === "https://slsa.dev/provenance/v1",
+            );
+            if (!provenance?.bundle?.dsseEnvelope?.payload) {
+              const error = new Error("npm provenance bundle is not available yet");
+              error.retryable = true;
+              throw error;
+            }
+
+            const statement = JSON.parse(
+              Buffer.from(provenance.bundle.dsseEnvelope.payload, "base64").toString("utf8"),
+            );
+            requireEqual(statement._type, "https://in-toto.io/Statement/v1", "attestation statement type");
+            requireEqual(statement.predicateType, "https://slsa.dev/provenance/v1", "statement predicate type");
+            const subject = statement.subject?.find(({ name }) => name === expectedPurl);
+            requireEqual(subject?.digest?.sha512, expectedSha512Hex, "attested archive SHA-512");
+
+            const build = statement.predicate?.buildDefinition;
+            requireEqual(
+              build?.buildType,
+              "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+              "provenance build type",
+            );
+            const workflow = build?.externalParameters?.workflow;
+            requireEqual(workflow?.repository?.toLowerCase(), expectedRepository.toLowerCase(), "provenance repository");
+            requireEqual(workflow?.path, expectedWorkflowPath, "provenance workflow path");
+            requireEqual(workflow?.ref, expectedRef, "provenance Git ref");
+
+            const dependency = build?.resolvedDependencies?.find(({ uri }) => {
+              if (typeof uri !== "string" || uri.length <= expectedDependencyPrefix.length) return false;
+              return uri.slice(0, expectedDependencyPrefix.length).toLowerCase() === expectedDependencyPrefix.toLowerCase()
+                && uri.slice(expectedDependencyPrefix.length) === expectedRef;
+            });
+            requireEqual(dependency?.digest?.gitCommit, process.env.GITHUB_SHA, "provenance source commit");
+            requireEqual(
+              statement.predicate?.runDetails?.builder?.id,
+              "https://github.com/actions/runner/github-hosted",
+              "provenance builder",
+            );
+          };
+
+          for (let attempt = 1; attempt <= 10; attempt += 1) {
+            try {
+              const response = await fetch(packumentUrl, {
+                headers: { accept: "application/json" },
+                signal: AbortSignal.timeout(15_000),
+              });
+              if (!response.ok) {
+                const error = new Error(`npm registry verification failed with HTTP ${response.status}`);
+                error.retryable = response.status === 404 || response.status >= 500;
+                throw error;
+              }
+
+              const packument = await response.json();
+              const metadata = packument.versions?.[packed.version];
+              if (!metadata) {
+                const error = new Error(`${packed.name}@${packed.version} is not visible in the packument yet`);
+                error.retryable = true;
+                throw error;
+              }
+              requireEqual(metadata.name, packed.name, "npm package name");
+              requireEqual(metadata.version, packed.version, "npm package version");
+              requireEqual(metadata.dist?.integrity, expectedIntegrity, "npm archive integrity");
+              requireEqual(metadata.dist?.shasum, expectedShasum, "npm archive SHA-1");
+              const nextVersion = packument["dist-tags"]?.next;
+              const nextMatches = nextVersion === packed.version;
+              const nextMetadata = packument.versions?.[nextVersion];
+              const recoverableNewerNext = process.env.ALREADY_PUBLISHED === "true"
+                && typeof nextVersion === "string"
+                && compareSemver(nextVersion, packed.version) > 0
+                && nextMetadata?._npmUser?.trustedPublisher?.id === "github"
+                && nextMetadata?.dist?.attestations?.provenance?.predicateType === "https://slsa.dev/provenance/v1";
+              if (!nextMatches && !recoverableNewerNext) {
+                const error = new Error(
+                  `npm next dist-tag is neither this release nor a newer provenance-valid release: ${nextVersion ?? "missing"}`,
+                );
+                error.retryable = true;
+                throw error;
+              }
+              await verifyProvenance(metadata);
+              if (!nextMatches) {
+                console.log(
+                  `Recovered release ${packed.version} is byte-identical and provenance-valid; preserving newer npm next ${nextVersion}`,
+                );
+              }
+              console.log(
+                `Verified npm byte identity, Trusted Publisher, and GitHub provenance for ${packed.name}@${packed.version}`,
+              );
+              process.exit(0);
+            } catch (error) {
+              if (error.retryable === false || attempt === 10) {
+                throw error;
+              }
+              console.log(`npm verification attempt ${attempt} is not complete: ${error.message}`);
+              await delay(3_000);
+            }
+          }
+          NODE
+
+      - name: Publish the verified GitHub prerelease
+        env:
+          ALREADY_PUBLIC: ${{ steps.github_release.outputs.already_public }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$ALREADY_PUBLIC" != "true" ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease
+          fi
+          release_json=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease)
+          RELEASE_JSON="$release_json" node --input-type=module <<'NODE'
+          const release = JSON.parse(process.env.RELEASE_JSON);
+          if (release.isDraft || !release.isPrerelease) {
+            throw new Error("GitHub Release is not a published prerelease");
+          }
+          NODE

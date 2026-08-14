@@ -45,9 +45,9 @@ The plugin owns no custom `SessionEvent` type and maintains no separate branch d
 
 The commands below install the plugin into DSH's `web` profile. `dsh plugin` forwards package-management arguments to pnpm, so both `dsh` and pnpm must be available on `PATH`.
 
-### Install from npm (after Trusted Publishing is enabled)
+### Install from npm (recommended)
 
-The first beta is currently distributed as a precompiled GitHub Release tarball. The npm `next` channel will be enabled after the repository's Trusted Publisher is configured. Until the version is actually visible in the npm registry, use the Release tarball below instead of assuming that the package name is installable.
+The npm package is precompiled, so installation does not require permission to run a local build. Starting with `0.1.0-beta.2`, GitHub Actions publishes through a Trusted Publisher with short-lived OIDC credentials: no npm token is stored in the repository, and provenance is generated automatically.
 
 Install the latest prerelease from the `next` channel:
 
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-session-tree@next
 To pin this release instead:
 
 ```sh
-dsh plugin --profile web add dsh-session-tree@0.1.0-beta.1
+dsh plugin --profile web add dsh-session-tree@0.1.0-beta.2
 ```
 
 ### Install from GitHub
@@ -66,17 +66,17 @@ dsh plugin --profile web add dsh-session-tree@0.1.0-beta.1
 Pin the installation to an audited release tag. For stricter supply-chain requirements, replace the tag with a verified full commit SHA:
 
 ```sh
-dsh plugin --profile web add github:ZhengQingJing/dsh-session-tree#v0.1.0-beta.1
+dsh plugin --profile web add github:ZhengQingJing/dsh-session-tree#v0.1.0-beta.2
 ```
 
 A Git installation runs the repository's `prepare` build script with your user permissions and outside the agent sandbox. Before granting permission, audit the tag or commit, `package.json`, lockfile, and `prepare` script. pnpm 10 and newer block dependency builds by default; the first `add` may fail as expected and print an `allowBuilds` key together with the path to the profile's `pnpm-workspace.yaml`. Add only the **exact package key printed by pnpm** to that file's `allowBuilds`, then rerun the same command. Do not enable a global allow-all-build-scripts option. Precompiled npm packages and release tarballs do not require this permission.
 
-### Install a GitHub Release tarball (currently recommended)
+### Install a GitHub Release tarball
 
-Download `dsh-session-tree-0.1.0-beta.1.tgz` from [Releases](https://github.com/ZhengQingJing/dsh-session-tree/releases), verify it against the checksum published with that release, and run:
+Download `dsh-session-tree-0.1.0-beta.2.tgz` from [Releases](https://github.com/ZhengQingJing/dsh-session-tree/releases), verify it against the checksum published with that release, and run:
 
 ```sh
-dsh plugin --profile web add ./dsh-session-tree-0.1.0-beta.1.tgz
+dsh plugin --profile web add ./dsh-session-tree-0.1.0-beta.2.tgz
 ```
 
 You can also build a precompiled tarball yourself. This project uses pnpm `11.7.0`:
@@ -102,7 +102,7 @@ Confirm that the configuration includes `dsh-session-tree`. Restart DSH and relo
 
 ## Updating
 
-After the corresponding version is visible in the npm registry, follow the `next` channel with:
+Follow the npm `next` channel with:
 
 ```sh
 dsh plugin --profile web update dsh-session-tree@next

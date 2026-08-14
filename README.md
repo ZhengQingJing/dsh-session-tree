@@ -45,9 +45,9 @@ DSH 尚处于开发者预览阶段。为避免在未来 API 变更上作出不�
 
 以下命令安装到 DSH 的 `web` profile。`dsh plugin` 会把包管理参数转发给 pnpm，因此需要先确保 `dsh` 和 pnpm 都在 `PATH` 中。
 
-### 从 npm 安装（Trusted Publishing 启用后）
+### 从 npm 安装（推荐）
 
-首个 beta 当前以 GitHub Release 的预编译 tarball 为准。npm `next` 渠道将在仓库的 Trusted Publisher 配置完成后启用；在 npm registry 确实列出该版本之前，请使用下方 Release tarball，不要假定包名已经可安装。
+npm 包是预编译制品，安装时不需要授权本地构建脚本。`0.1.0-beta.2` 起由 GitHub Actions Trusted Publisher 使用短期 OIDC 凭据发布，不在仓库中保存 npm token，并自动生成 provenance。
 
 安装 `next` 渠道中的最新预发布版本：
 
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-session-tree@next
 如需固定本次发布版本：
 
 ```sh
-dsh plugin --profile web add dsh-session-tree@0.1.0-beta.1
+dsh plugin --profile web add dsh-session-tree@0.1.0-beta.2
 ```
 
 ### 从 GitHub 安装
@@ -66,17 +66,17 @@ dsh plugin --profile web add dsh-session-tree@0.1.0-beta.1
 固定到已审阅的 release tag；更严格的供应链要求下，请将 tag 换成已核验的完整 commit SHA：
 
 ```sh
-dsh plugin --profile web add github:ZhengQingJing/dsh-session-tree#v0.1.0-beta.1
+dsh plugin --profile web add github:ZhengQingJing/dsh-session-tree#v0.1.0-beta.2
 ```
 
 Git 安装会以当前用户权限、在 agent sandbox 之外执行仓库的 `prepare` 构建脚本。请在授权前审阅 tag/commit、`package.json`、锁文件和 `prepare` 脚本。pnpm 10 及以上版本默认会拦截这类依赖构建；首次 `add` 可能按预期失败，并打印 `allowBuilds` 键及实际 profile 中 `pnpm-workspace.yaml` 的路径。只把 pnpm 输出的**精确包键**加入该文件的 `allowBuilds`，然后重跑同一条命令；不要开启全局允许所有构建脚本的选项。预编译的 npm 包或 release tarball 不需要这项授权。
 
-### 从 GitHub Release tarball 安装（当前推荐）
+### 从 GitHub Release tarball 安装
 
-从 [Releases](https://github.com/ZhengQingJing/dsh-session-tree/releases) 下载 `dsh-session-tree-0.1.0-beta.1.tgz`，先对照该 release 提供的校验值，再执行：
+从 [Releases](https://github.com/ZhengQingJing/dsh-session-tree/releases) 下载 `dsh-session-tree-0.1.0-beta.2.tgz`，先对照该 release 提供的校验值，再执行：
 
 ```sh
-dsh plugin --profile web add ./dsh-session-tree-0.1.0-beta.1.tgz
+dsh plugin --profile web add ./dsh-session-tree-0.1.0-beta.2.tgz
 ```
 
 也可以自行构建预编译 tarball。本项目使用 pnpm `11.7.0`：
@@ -102,7 +102,7 @@ dsh --profile web
 
 ## 更新
 
-在 npm registry 已列出对应版本后，可跟随 `next` 渠道更新：
+跟随 npm `next` 渠道更新：
 
 ```sh
 dsh plugin --profile web update dsh-session-tree@next
