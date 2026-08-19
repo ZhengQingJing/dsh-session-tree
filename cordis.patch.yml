@@ -1,6 +1,4 @@
-# Install one stable Loader row. Once the package ships a dsh.client manifest
-# and ./client export, this same row becomes the browser module discovery row;
-# no second plugin instance is required.
+# One stable Loader row discovers both the no-op Host entry and Web client.
 - insert:
     - id: dsh-session-tree
       name: dsh-session-tree

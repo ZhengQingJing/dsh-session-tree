@@ -5,7 +5,6 @@
  * window.__ModuleLoader__. It must not be emitted as a normal script or ESM
  * module: runtime identities come from the loader's frozen module table.
  */
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import {
   basename,
@@ -23,37 +22,11 @@ const PACKAGE_ROOT = resolvePath('.')
 const CSS_VIRTUAL_PREFIX = '\0dsh-session-tree-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
-/** Shared browser modules seeded by the DSH Web shell. */
-const PLATFORM_MODULES = [
+/** The complete runtime value-import surface of this client bundle. */
+const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
-  'react-dom',
-  'react-dom/client',
-  '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-web-react',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-attachment',
-  '@deepseek-ai/dsh-client-schema-form',
 ] as const
-
-/** Snapshot-store runtime temporarily shared through the module table. */
-const RUNTIME_CLIENT = '@deepseek-ai/dsh-client-runtime/client'
-const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, RUNTIME_CLIENT]
-
-/** Browser-safe wire libraries that may be inlined without duplicating runtime identity. */
-const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
-const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
-const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
-
-function sourceAssetPath(source: string, importer: string): string {
-  const emitted = resolvePath(dirname(importer), source)
-  if (existsSync(emitted)) return emitted
-  const marker = `${sep}lib${sep}types${sep}`
-  const boundary = emitted.indexOf(marker)
-  if (boundary < 0) return emitted
-  return resolvePath(emitted.slice(0, boundary), 'src', emitted.slice(boundary + marker.length))
-}
 
 function packageRelativePath(absolutePath: string): string {
   const packagePath = relativePath(PACKAGE_ROOT, absolutePath)
@@ -68,14 +41,9 @@ function packageRelativePath(absolutePath: string): string {
   return packagePath.split(sep).join('/')
 }
 
-const hostEntry = existsSync('lib/types/index.js') ? 'lib/types/index.js' : 'src/index.ts'
-const clientEntry = existsSync('lib/types/client/index.js')
-  ? 'lib/types/client/index.js'
-  : 'src/client/index.ts'
-
 const host: UserConfig = {
   name: PACKAGE_ID,
-  entry: { index: hostEntry },
+  entry: { index: 'src/index.ts' },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
@@ -93,7 +61,7 @@ const host: UserConfig = {
 
 const client: UserConfig = {
   name: `${PACKAGE_ID}/client`,
-  entry: { client: clientEntry },
+  entry: { client: 'src/client/index.ts' },
   outDir: 'lib',
   format: 'cjs',
   platform: 'browser',
@@ -114,19 +82,18 @@ const client: UserConfig = {
     name: 'dsh-session-tree-client-purity',
     resolveId(source: string) {
       if (!source.startsWith('@deepseek-ai/')) return null
-      if (CLIENT_EXTERNALS.includes(source)) return null
-      if (VENDORED_LIBRARY.test(source)) return null
-      if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null
       throw new Error(
-        `client bundle purity: "${source}" is neither a DSH platform module nor an inline-safe wire library; `
-        + 'use Cordis services for cross-plugin values and type-only imports for declarations',
+        `client bundle purity: unexpected runtime value import "${source}"; `
+        + 'use injected Cordis services and type-only imports for DSH declarations',
       )
     },
   }, {
     name: 'dsh-session-tree-css-modules-inline',
     resolveId(source: string, importer: string | undefined) {
       if (!source.endsWith('.module.css')) return null
-      const absolutePath = importer === undefined ? source : sourceAssetPath(source, importer)
+      const absolutePath = importer === undefined
+        ? resolvePath(source)
+        : resolvePath(dirname(importer), source)
       return CSS_VIRTUAL_PREFIX + packageRelativePath(resolvePath(absolutePath)) + CSS_VIRTUAL_SUFFIX
     },
     async load(virtualId: string) {

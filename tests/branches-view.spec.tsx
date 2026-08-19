@@ -1,35 +1,18 @@
 // @vitest-environment jsdom
 
-import {
-  act, type ButtonHTMLAttributes, type ReactNode,
-} from 'react'
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest'
 import type {
-  ChatSnapshot, ConversationSnapshot, SessionId, SessionListState, SessionSummary, TurnLocation,
+  SessionId, SessionListState, SessionSummary,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   BranchesView, type BranchesViewProps,
 } from '../src/client/BranchesView.tsx'
 import { en, type SessionTreeLocaleKey } from '../src/client/locales.ts'
-
-interface PrimitiveButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  readonly icon?: ReactNode
-  readonly size?: string
-  readonly variant?: string
-}
-
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  Button: ({ children, icon, size: _size, variant: _variant, ...props }: PrimitiveButtonProps) => (
-    <button {...props}>{icon}{children}</button>
-  ),
-  IconBranchOutline16: () => <span aria-hidden="true">branch-icon</span>,
-  IconWarningOutline16: () => <span aria-hidden="true">warning-icon</span>,
-  StateDot: ({ state }: { readonly state: string }) => <span data-state={state} />,
-}))
 
 const CURRENT = 'fork-current' as SessionId
 const ROOT = 'root' as SessionId
@@ -50,102 +33,46 @@ afterEach(async () => {
   mountedRoots.clear()
   document.body.replaceChildren()
   vi.restoreAllMocks()
-  vi.useRealTimers()
 })
 
 function summary(
   id: SessionId,
   displayTitle: string,
-  updatedAt: number,
-  options: { readonly parentId?: SessionId; readonly origin?: 'subagent' } = {},
+  options: {
+    readonly parentId?: SessionId
+    readonly origin?: 'subagent'
+    readonly running?: boolean
+    readonly updatedAt?: number
+  } = {},
 ): SessionSummary {
   return {
     id,
     displayTitle,
-    running: false,
+    running: options.running ?? false,
     blank: false,
-    updatedAt,
+    updatedAt: options.updatedAt ?? 0,
     ...(options.parentId === undefined ? {} : { parentId: options.parentId }),
     ...(options.origin === undefined ? {} : { origin: options.origin }),
   }
 }
 
-function sessionList(): SessionListState {
-  const rows = [
-    summary(ROOT, 'Root conversation', 10),
-    summary(CURRENT, 'Current branch', 30, { parentId: ROOT }),
-    summary(SIBLING, 'Worker child', 20, { parentId: ROOT, origin: 'subagent' }),
-    summary(OUTSIDE, 'Other family', 40),
-  ]
+function sessionList(
+  rows: readonly SessionSummary[] = [
+    summary(ROOT, 'Root conversation'),
+    summary(CURRENT, 'Current branch', { parentId: ROOT }),
+    summary(SIBLING, 'Worker child', { parentId: ROOT, origin: 'subagent' }),
+    summary(OUTSIDE, 'Other family'),
+  ],
+  current: SessionId | undefined = CURRENT,
+): SessionListState {
   return {
     ids: rows.map(row => row.id),
     byId: Object.fromEntries(rows.map(row => [row.id, row])) as Record<SessionId, SessionSummary>,
-    current: CURRENT,
+    current,
     phase: 'ready',
     subagentsByParent: {},
     jobsBySession: {},
     currentAddress: undefined,
-  }
-}
-
-function turn(turnNumber: number, end?: { readonly seq: number; readonly time: number }): TurnLocation {
-  return {
-    turn: turnNumber,
-    start: undefined,
-    end: end as TurnLocation['end'],
-    status: end === undefined ? 'open' : 'closed',
-    steps: [],
-    data: { get: () => undefined },
-  }
-}
-
-function conversation(options: {
-  readonly hasMore?: boolean
-  readonly loadingOlder?: boolean
-} = {}): ConversationSnapshot {
-  const timeline = {
-    turnOrder: [1, 2, 3],
-    turns: new Map([
-      [1, turn(1, { seq: 11, time: Date.UTC(2026, 0, 1, 1) })],
-      [2, turn(2, { seq: 22, time: Date.UTC(2026, 0, 1, 2) })],
-      [3, turn(3)],
-    ]),
-  }
-  const chat: ChatSnapshot = {
-    order: [],
-    nodes: { get: () => undefined, values: () => [] },
-    locations: { getTurn: () => [], getStep: () => [] },
-    timeline,
-    legacy: {
-      nodes: [],
-      turnTimings: new Map(),
-      turnEnds: new Map(),
-      partial: null,
-      runningCalls: [],
-    },
-  }
-  return {
-    sessionId: CURRENT,
-    views: { get: () => undefined },
-    chat,
-    nodes: [],
-    turnTimings: new Map(),
-    turnEnds: new Map([[1, 11], [2, 22]]),
-    partial: null,
-    runningCalls: [],
-    pending: [],
-    queue: [],
-    running: false,
-    subagent: null,
-    composerPhase: 'active',
-    removed: false,
-    openState: 'open',
-    openError: null,
-    hasMore: options.hasMore ?? true,
-    loadingOlder: options.loadingOlder ?? false,
-    promptError: null,
-    blank: false,
-    lastAgentError: null,
   }
 }
 
@@ -166,11 +93,9 @@ const t: BranchesViewProps['t'] = (key, params) => {
 }
 
 interface MountOptions {
-  readonly forkAt?: BranchesViewProps['forkAt']
-  readonly loadOlder?: BranchesViewProps['loadOlder']
-  readonly openSession?: BranchesViewProps['openSession']
-  readonly snapshot?: ConversationSnapshot
+  readonly sessionId?: SessionId
   readonly sessions?: SessionListState
+  readonly openSession?: BranchesViewProps['openSession']
 }
 
 async function mount(options: MountOptions = {}) {
@@ -178,15 +103,12 @@ async function mount(options: MountOptions = {}) {
   document.body.append(container)
   const root = createRoot(container)
   mountedRoots.add(root)
-  const forkAt = options.forkAt ?? vi.fn(() => Promise.resolve('child' as SessionId))
-  const loadOlder = options.loadOlder ?? vi.fn(() => Promise.resolve(true))
   const openSession = options.openSession ?? vi.fn(() => true)
   const props = {
-    sessionId: CURRENT,
-    useSession: hookOf(options.snapshot ?? conversation()),
+    sessionId: options.sessionId ?? CURRENT,
+    useSession: hookOf({}),
+    useProjection: vi.fn(() => undefined),
     useSessions: hookOf(options.sessions ?? sessionList()),
-    forkAt,
-    loadOlder,
     openSession,
     t,
   } as unknown as BranchesViewProps
@@ -194,132 +116,198 @@ async function mount(options: MountOptions = {}) {
   await act(async () => {
     root.render(<BranchesView {...props} />)
   })
-  return { container, forkAt, loadOlder, openSession }
+  return { container, openSession }
 }
 
-function buttons(container: HTMLElement, label: string): HTMLButtonElement[] {
+function buttons(container: HTMLElement): HTMLButtonElement[] {
   return Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-    .filter(button => button.textContent?.includes(label) === true)
 }
 
 function oneButton(container: HTMLElement, label: string): HTMLButtonElement {
-  const matches = buttons(container, label)
+  const matches = buttons(container)
+    .filter(button => button.textContent?.includes(label) === true)
   expect(matches, `button containing "${label}"`).toHaveLength(1)
   return matches[0]!
 }
 
 async function click(button: HTMLButtonElement): Promise<void> {
-  await act(async () => {
-    button.click()
-    await Promise.resolve()
-  })
-}
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, resolve, reject }
+  await act(async () => { button.click() })
 }
 
 describe('BranchesView', () => {
-  it('renders only the active lineage family and completed-turn checkpoints newest first', async () => {
+  it('renders only the current session family as a read-only lineage navigator', async () => {
     const { container } = await mount()
 
     expect(container.textContent).toContain('Root conversation')
     expect(container.textContent).toContain('Current branch')
     expect(container.textContent).toContain('Worker child')
     expect(container.textContent).not.toContain('Other family')
-    expect(container.textContent).toContain('root')
-    expect(container.textContent).toContain('branch')
-    expect(container.textContent).toContain('subagent')
+    expect(oneButton(container, 'Root conversation').textContent).toContain('root')
+    expect(oneButton(container, 'Current branch').textContent).toContain('branch')
+    expect(oneButton(container, 'Worker child').textContent).toContain('subagent')
     expect(oneButton(container, 'Current branch').getAttribute('aria-current')).toBe('page')
 
-    const checkpointHeading = container.querySelector('#session-checkpoints-heading')
-    const checkpointPanel = checkpointHeading?.closest('section')
-    expect(checkpointPanel).not.toBeNull()
-    const checkpointLabels = Array.from(checkpointPanel!.querySelectorAll('li strong'))
-      .map(node => node.textContent)
-    expect(checkpointLabels).toEqual(['Turn 2', 'Turn 1'])
-    expect(checkpointPanel!.textContent).toContain('event #22')
-    expect(checkpointPanel!.textContent).toContain('event #11')
-    expect(checkpointPanel!.textContent).not.toContain('Turn 3')
+    expect(container.querySelectorAll('section')).toHaveLength(1)
+    expect(container.querySelector('#session-checkpoints-heading')).toBeNull()
+    expect(container.textContent).not.toContain('Branch from here')
   })
 
-  it('submits the selected completed-turn anchor once and clears pending state on success', async () => {
-    const forkAt = vi.fn(() => Promise.resolve('new-child' as SessionId))
-    const { container } = await mount({ forkAt })
-
-    await click(buttons(container, 'Branch from here')[0]!)
-
-    expect(forkAt).toHaveBeenCalledTimes(1)
-    expect(forkAt).toHaveBeenCalledWith(22)
-    expect(buttons(container, 'Branch from here')).toHaveLength(2)
-    expect(container.querySelector('[role="status"]')?.textContent ?? '').not.toContain(
-      'did not receive a complete confirmation',
-    )
-  })
-
-  it('disables every fork while one is pending and ignores further gestures', async () => {
-    const pending = deferred<SessionId>()
-    const forkAt = vi.fn(() => pending.promise)
-    const { container } = await mount({ forkAt })
-    const initialForkButtons = buttons(container, 'Branch from here')
-
-    await click(initialForkButtons[0]!)
-
-    const pendingButton = oneButton(container, 'Creating…')
-    const allCheckpointButtons = [pendingButton, ...buttons(container, 'Branch from here')]
-    expect(allCheckpointButtons).toHaveLength(2)
-    expect(allCheckpointButtons.every(button => button.disabled)).toBe(true)
-    expect(oneButton(container, 'Load earlier turns').disabled).toBe(true)
-
-    await click(allCheckpointButtons[0]!)
-    await click(allCheckpointButtons[1]!)
-    expect(forkAt).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      pending.resolve('new-child' as SessionId)
-      await pending.promise
+  it('keeps rc.7 breadcrumb-only subagent ancestors when a deep child is addressed', async () => {
+    const child = 'breadcrumb-child' as SessionId
+    const grandchild = 'breadcrumb-grandchild' as SessionId
+    const root = summary(ROOT, 'Root conversation')
+    const childSummary = summary(child, 'Breadcrumb child', {
+      parentId: ROOT,
+      origin: 'subagent',
     })
-    expect(buttons(container, 'Branch from here').every(button => !button.disabled)).toBe(true)
-  })
-
-  it('shows an uncertain-outcome notice after fork rejection without automatically retrying', async () => {
-    vi.useFakeTimers()
-    const forkAt = vi.fn(() => Promise.reject(new Error('workspace attachment failed')))
-    const { container } = await mount({ forkAt })
-
-    await click(buttons(container, 'Branch from here')[0]!)
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      'did not receive a complete confirmation',
-    )
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      'will not be retried automatically',
-    )
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000)
+    const grandchildSummary = summary(grandchild, 'Addressed grandchild', {
+      parentId: child,
+      origin: 'subagent',
     })
-    expect(forkAt).toHaveBeenCalledTimes(1)
-    expect(buttons(container, 'Branch from here').every(button => !button.disabled)).toBe(true)
+    const sessions: SessionListState = {
+      ...sessionList([root], grandchild),
+      // rc.7 excludes the addressed route from ids but materializes the whole
+      // breadcrumb in byId so navigation can recover each parent address.
+      ids: [ROOT],
+      byId: {
+        [ROOT]: root,
+        [grandchild]: grandchildSummary,
+        [child]: childSummary,
+      } as Record<SessionId, SessionSummary>,
+      currentAddress: {
+        parentSessionId: child,
+        childSessionId: grandchild,
+        mode: 'continuable',
+      },
+    }
+
+    const { container } = await mount({ sessionId: grandchild, sessions })
+
+    expect(buttons(container).map(button => button.textContent)).toEqual([
+      expect.stringContaining('Root conversation'),
+      expect.stringContaining('Breadcrumb child'),
+      expect.stringContaining('Addressed grandchild'),
+    ])
+    expect(oneButton(container, 'Breadcrumb child').textContent).toContain('subagent')
+    expect(oneButton(container, 'Addressed grandchild').textContent).toContain('subagent')
+    expect(oneButton(container, 'Addressed grandchild').getAttribute('aria-current')).toBe('page')
+    expect(container.textContent).not.toContain('lineage issue')
   })
 
-  it('reports an earlier-history load failure without removing loaded checkpoints', async () => {
-    const loadOlder = vi.fn(() => Promise.reject(new Error('history unavailable')))
-    const { container } = await mount({ loadOlder })
+  it('shows an empty state instead of another family when the current id is absent', async () => {
+    const missing = 'not-loaded' as SessionId
+    const sessions = sessionList([
+      summary(ROOT, 'Unrelated root'),
+      summary(SIBLING, 'Unrelated child', { parentId: ROOT }),
+    ], missing)
 
-    await click(oneButton(container, 'Load earlier turns'))
+    const { container } = await mount({ sessionId: missing, sessions })
 
-    expect(loadOlder).toHaveBeenCalledTimes(1)
+    expect(buttons(container)).toHaveLength(0)
+    expect(container.textContent).toContain(
+      'The current Session is not present in the loaded lineage.',
+    )
+    expect(container.textContent).not.toContain('Unrelated root')
+    expect(container.textContent).not.toContain('Unrelated child')
+  })
+
+  it('does nothing for the current node and navigates to another native Session once', async () => {
+    const openSession = vi.fn(() => true)
+    const { container } = await mount({ openSession })
+
+    await click(oneButton(container, 'Current branch'))
+    expect(openSession).not.toHaveBeenCalled()
+
+    await click(oneButton(container, 'Worker child'))
+    expect(openSession).toHaveBeenCalledTimes(1)
+    expect(openSession).toHaveBeenCalledWith(SIBLING)
+  })
+
+  it('reports a navigation failure without changing or removing lineage rows', async () => {
+    const openSession = vi.fn(() => false)
+    const { container } = await mount({ openSession })
+
+    await click(oneButton(container, 'Worker child'))
+
+    expect(openSession).toHaveBeenCalledWith(SIBLING)
     expect(container.querySelector('[role="status"]')?.textContent).toBe(
-      'Earlier history could not be loaded. Existing records were not affected.',
+      'This Session could not be opened; it may be a detached subagent node.',
     )
-    expect(container.textContent).toContain('Turn 2')
-    expect(container.textContent).toContain('Turn 1')
-    expect(oneButton(container, 'Load earlier turns').disabled).toBe(false)
+    expect(oneButton(container, 'Root conversation')).toBeDefined()
+    expect(oneButton(container, 'Current branch')).toBeDefined()
+    expect(oneButton(container, 'Worker child')).toBeDefined()
+  })
+
+  it('surfaces corrupt loaded lineage read-only and keeps it navigable', async () => {
+    const cycleA = 'cycle-a' as SessionId
+    const cycleB = 'cycle-b' as SessionId
+    const sessions = sessionList([
+      summary(cycleA, 'Cycle A', { parentId: cycleB }),
+      summary(cycleB, 'Cycle B', { parentId: cycleA }),
+    ], cycleA)
+    const { container, openSession } = await mount({ sessionId: cycleA, sessions })
+
+    expect(container.textContent).toContain(
+      '2 lineage issue(s) exist in this family; no durable records were changed.',
+    )
+    expect(oneButton(container, 'Cycle A').textContent).toContain('lineage issue (read only)')
+    expect(oneButton(container, 'Cycle B').textContent).toContain('lineage issue (read only)')
+
+    await click(oneButton(container, 'Cycle B'))
+    expect(openSession).toHaveBeenCalledWith(cycleB)
+  })
+
+  it('caps a large family at 200 rows while retaining the current node', async () => {
+    const rootId = 'large-root' as SessionId
+    const rows: SessionSummary[] = [summary(rootId, 'Large root')]
+    for (let index = 1; index < 250; index += 1) {
+      const id = `large-${String(index).padStart(3, '0')}` as SessionId
+      rows.push(summary(id, `Large child ${String(index).padStart(3, '0')}`, {
+        parentId: rootId,
+      }))
+    }
+    const currentId = 'large-125' as SessionId
+    const sessions = sessionList(rows, currentId)
+    const { container } = await mount({ sessionId: currentId, sessions })
+
+    expect(buttons(container)).toHaveLength(200)
+    expect(oneButton(container, 'Large root')).toBeDefined()
+    expect(oneButton(container, 'Large child 125').getAttribute('aria-current')).toBe('page')
+    expect(container.textContent).toContain(
+      'This lineage is large; showing 200 / 250 nearby entries while retaining the current node and as many ancestors as fit.',
+    )
+    expect(container.textContent).toContain('Large child 026')
+    expect(container.textContent).toContain('Large child 224')
+    expect(container.textContent).not.toContain('Large child 025')
+    expect(container.textContent).not.toContain('Large child 225')
+  })
+
+  it('retains a distant parent chain before filling a large-family window', async () => {
+    const rootId = 'window-root' as SessionId
+    const parentId = 'window-parent' as SessionId
+    const blockerId = 'window-blocker' as SessionId
+    const currentId = 'window-current' as SessionId
+    const rows: SessionSummary[] = [
+      summary(rootId, 'Window root'),
+      summary(parentId, 'Distant parent', { parentId: rootId }),
+      summary(blockerId, 'Large earlier sibling', { parentId }),
+    ]
+    let previous = blockerId
+    for (let index = 0; index < 210; index += 1) {
+      const id = `blocker-child-${index}` as SessionId
+      rows.push(summary(id, `Blocker child ${index}`, { parentId: previous }))
+      previous = id
+    }
+    rows.push(summary(currentId, 'Current after subtree', { parentId }))
+
+    const { container } = await mount({
+      sessionId: currentId,
+      sessions: sessionList(rows, currentId),
+    })
+
+    expect(buttons(container)).toHaveLength(200)
+    expect(oneButton(container, 'Window root')).toBeDefined()
+    expect(oneButton(container, 'Distant parent')).toBeDefined()
+    expect(oneButton(container, 'Current after subtree').getAttribute('aria-current')).toBe('page')
   })
 })

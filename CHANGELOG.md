@@ -7,6 +7,38 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.0-beta.1] - 2026-08-19
+
+### Changed
+
+- Target DeepSeek Harness `0.1.0-rc.7` and preserve the Host-provided Session
+  ordering when projecting lineage.
+- Reduce the product to one read-only **Branches** view for the current Session
+  family. DSH Chat now owns all completed-turn branch creation.
+- Bound large-family rendering around the current node while keeping orphaned
+  and cyclic lineage visible without modifying durable records.
+- Mark DSH, Cordis, and React peers as host-provided optional peers so installing
+  the precompiled plugin does not pull a second DSH Client dependency graph into
+  the profile.
+- Trim the published artifact to runtime files, declarations, bilingual READMEs,
+  license, changelog, and the bundle patch; the design document remains in the
+  source repository.
+
+### Removed
+
+- The duplicate completed-turn checkpoint browser, history pagination, custom
+  `sessions.fork()` call, fork mutex, and uncertain-outcome workflow.
+- The runtime dependency on DSH UI primitives and the unused `react-dom` peer.
+- Compatibility declarations for DSH rc.5 and rc.6.
+
+### Security
+
+- The plugin performs no Session mutation, event append, parent update, title
+  change, or side-store write. Its only action is navigation through native DSH
+  Session APIs.
+- Branch creation and its failure semantics remain entirely inside DSH's native
+  Chat implementation.
+
 ## [0.1.0-beta.2] - 2026-08-14
 
 ### Added

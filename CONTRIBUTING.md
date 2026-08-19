@@ -9,8 +9,10 @@ Thank you for helping improve `dsh-session-tree`.
 - Use GitHub Security Advisories, not public issues, for vulnerabilities; see
   [SECURITY.md](./SECURITY.md).
 - Keep changes compatible with the DSH versions declared in `package.json`.
-- Do not weaken the immutable-parent model or imply that conversation branches
-  roll back workspace or external side effects.
+- Keep the plugin read-only: DSH Chat owns branch creation, while this package
+  only projects lineage and navigates native Sessions.
+- Do not imply that conversation branches roll back workspace or external side
+  effects.
 
 ## Development setup
 
@@ -48,8 +50,9 @@ conversation logs, or other private data in tests or fixtures.
   formats.
 - Treat malformed lineage data as untrusted input and fail soft without
   rewriting durable session records.
-- Do not automatically retry an ambiguous fork result.
-- Preserve bounded rendering and iterative tree traversal for large histories.
+- Do not add Session mutation, event append, parent updates, title mutation, or
+  a plugin-owned lineage store.
+- Preserve bounded rendering and iterative tree traversal for large families.
 - Keep browser bundles isolated from duplicate React, Cordis, and DSH runtime
   instances.
 
