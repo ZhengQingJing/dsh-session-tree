@@ -82,12 +82,13 @@
     "build": "pnpm run clean && tsc -p tsconfig.json && tsdown",
     "bundle": "tsdown",
     "check:bundle": "node scripts/check-bundle.mjs",
+    "check:reproducible": "node scripts/check-reproducible-build.mjs",
     "clean": "node scripts/clean.mjs",
     "pack:check": "pnpm pack --dry-run",
     "prepare": "pnpm run build",
     "release:check": "node scripts/check-release.mjs",
     "test": "vitest run",
-    "verify": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:bundle && pnpm run release:check",
+    "verify": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:bundle && pnpm run check:reproducible && pnpm run release:check",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {

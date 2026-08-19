@@ -23,6 +23,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Trim the published artifact to runtime files, declarations, bilingual READMEs,
   license, changelog, and the bundle patch; the design document remains in the
   source repository.
+- Serialize CSS module exports deterministically and require two byte-identical
+  package builds before release, preserving digest-based workflow recovery.
 
 ### Removed
 

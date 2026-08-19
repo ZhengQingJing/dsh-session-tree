@@ -110,7 +110,10 @@ const client: UserConfig = {
         minify: true,
       })
       const classMap: Record<string, string> = {}
-      for (const [local, value] of Object.entries(cssExports ?? {})) classMap[local] = value.name
+      const classEntries = Object.entries(cssExports ?? {}).sort(([left], [right]) => (
+        left < right ? -1 : left > right ? 1 : 0
+      ))
+      for (const [local, value] of classEntries) classMap[local] = value.name
       const tagId = `${PACKAGE_ID}/${basename(fileId)}`
       return [
         `const css = ${JSON.stringify(code.toString())};`,
