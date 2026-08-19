@@ -1,12 +1,12 @@
 {
   "name": "dsh-session-tree",
-  "version": "0.1.0-beta.2",
-  "description": "Git-like immutable session lineage for DeepSeek Harness",
+  "version": "0.2.0-beta.1",
+  "description": "Lightweight read-only session lineage navigation for DeepSeek Harness",
   "keywords": [
     "dsh-plugin",
     "dsh",
     "deepseek-harness",
-    "session-management",
+    "session-lineage",
     "conversation",
     "typescript"
   ],
@@ -46,13 +46,14 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
-    "lib/types/**/*.d.ts",
+    "lib/types/index.d.ts",
+    "lib/types/client/index.d.ts",
+    "lib/types/client/locales.d.ts",
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
     "LICENSE",
-    "CHANGELOG.md",
-    "docs/**"
+    "CHANGELOG.md"
   ],
   "license": "MIT",
   "publishConfig": {
@@ -72,8 +73,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-primitives"
+        "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "platform": "web"
     }
@@ -91,22 +91,39 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.5 || 0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.5 || 0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.5 || 0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.5 || 0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.5 || 0.1.0-rc.6",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.7",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-runtime": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-conversation": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.7",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "jsdom": "29.1.1",

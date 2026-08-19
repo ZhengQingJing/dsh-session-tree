@@ -30,8 +30,13 @@ appropriate fix and release notes when possible.
 
 ## Security boundary
 
-`dsh-session-tree` branches DSH conversation history. It does not provide a
-transaction, sandbox, or rollback mechanism for filesystem changes, commands,
-Git state, processes, network requests, messages, payments, or any other tool or
-external-system side effect. Reports based only on expecting those effects to
-be reverted are outside this project's security boundary.
+`dsh-session-tree` only visualizes and navigates lineage already owned by DSH.
+It does not create branches, append Session events, modify parent pointers, or
+store an independent copy of conversation data. DSH's native Chat UI owns fork
+creation and its persistence semantics.
+
+The plugin is not a transaction, sandbox, or rollback mechanism for filesystem
+changes, commands, Git state, processes, network requests, messages, payments,
+or any other tool or external-system side effect. Reports based only on
+expecting those effects to be reverted are outside this project's security
+boundary.

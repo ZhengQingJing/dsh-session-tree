@@ -7,6 +7,24 @@ const manifestPath = join(packageRoot, 'package.json')
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
 const failures = []
 
+const EXPECTED_CLIENT_INJECT = [
+  '@deepseek-ai/dsh-client-locale',
+  '@deepseek-ai/dsh-client-runtime',
+  '@deepseek-ai/dsh-client-ui-conversation',
+]
+const EXPECTED_PACKAGE_FILES = [
+  'lib/index.js',
+  'lib/client.js',
+  'lib/types/index.d.ts',
+  'lib/types/client/index.d.ts',
+  'lib/types/client/locales.d.ts',
+  'cordis.patch.yml',
+  'README.md',
+  'README.en.md',
+  'LICENSE',
+  'CHANGELOG.md',
+]
+
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
 const DEVELOPMENT_VERSION = /(?:^|[.-])(dev|development|snapshot)(?:[.-]|$)/i
 
@@ -18,6 +36,29 @@ if (typeof manifest.version !== 'string' || !SEMVER.test(manifest.version)) {
   fail(`package.json version is not valid SemVer: ${JSON.stringify(manifest.version)}`)
 } else if (DEVELOPMENT_VERSION.test(manifest.version)) {
   fail(`package.json version is a development version: ${manifest.version}`)
+}
+
+if (JSON.stringify(manifest.dsh?.client?.inject) !== JSON.stringify(EXPECTED_CLIENT_INJECT)) {
+  fail('dsh.client.inject must contain only locale, runtime, and ui-conversation in canonical order')
+}
+
+if (JSON.stringify(manifest.files) !== JSON.stringify(EXPECTED_PACKAGE_FILES)) {
+  fail('package.json files must equal the canonical runtime-only allowlist')
+}
+if (Array.isArray(manifest.files)) {
+  for (const entry of manifest.files) {
+    if (typeof entry !== 'string') {
+      fail(`package.json files contains a non-string entry: ${JSON.stringify(entry)}`)
+      continue
+    }
+    const normalized = entry.replace(/^\.\//, '').replaceAll('\\', '/')
+    if (normalized === 'docs' || normalized.startsWith('docs/')) {
+      fail(`documentation must remain repository-only, not npm-packed: ${entry}`)
+    }
+    if (normalized === '.' || normalized === '*' || normalized.startsWith('**')) {
+      fail(`package.json files contains an unsafe broad publish pattern: ${entry}`)
+    }
+  }
 }
 
 // Package managers commonly forward a standalone `--` separator. It is not a
@@ -41,18 +82,10 @@ if (requestedTag !== undefined && requestedTag !== `v${manifest.version}`) {
 }
 
 const requiredFiles = [
+  ...EXPECTED_PACKAGE_FILES,
   'package.json',
-  'README.md',
-  'README.en.md',
-  'LICENSE',
-  'CHANGELOG.md',
   'SECURITY.md',
   'CONTRIBUTING.md',
-  'cordis.patch.yml',
-  'lib/index.js',
-  'lib/client.js',
-  'lib/types/index.d.ts',
-  'lib/types/client/index.d.ts',
   'docs/DSH_SESSION_TREE_DESIGN.md',
 ]
 
@@ -84,7 +117,6 @@ const publishRoots = [
   'LICENSE',
   'CHANGELOG.md',
   'cordis.patch.yml',
-  'docs',
   'lib',
 ]
 const secretNames = /^(?:\.env(?:\..+)?|\.npmrc|\.yarnrc(?:\.yml)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|.*\.(?:pem|p12|pfx|key|keystore|jks))$/i
