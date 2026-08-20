@@ -18,8 +18,10 @@ npm 包已经预编译，不需要运行本地构建脚本，也不会为 profil
 
 前置条件只有 `dsh` 和 `pnpm` 已在 `PATH` 中；`dsh plugin` 会把依赖操作转交给 profile 内的 pnpm。
 
+pnpm 11 默认对发布不足 24 小时的版本应用 [`minimumReleaseAge`](https://pnpm.io/settings/dependency-resolution#minimumreleaseage) 保护；固定当前已验证版本可避免 `@next` 在这段时间内回退到旧版：
+
 ```sh
-dsh plugin --profile web add dsh-session-tree@next
+dsh plugin --profile web add dsh-session-tree@0.2.0-beta.1
 dsh --profile web
 ```
 
@@ -52,10 +54,10 @@ dsh --profile web --dump-config
 
 ## 更新与卸载
 
-更新预发布版本：
+更新到当前已验证版本：
 
 ```sh
-dsh plugin --profile web update dsh-session-tree@next
+dsh plugin --profile web update dsh-session-tree@0.2.0-beta.1
 ```
 
 卸载：

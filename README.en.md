@@ -18,8 +18,10 @@ The npm package is precompiled. It runs no local build and does not install a se
 
 The only prerequisites are `dsh` and `pnpm` on `PATH`; `dsh plugin` forwards dependency operations to pnpm inside the profile.
 
+pnpm 11 applies its default [`minimumReleaseAge`](https://pnpm.io/settings/dependency-resolution#minimumreleaseage) guard to releases younger than 24 hours. Pin the verified version so `@next` cannot fall back to an older release during that window:
+
 ```sh
-dsh plugin --profile web add dsh-session-tree@next
+dsh plugin --profile web add dsh-session-tree@0.2.0-beta.1
 dsh --profile web
 ```
 
@@ -52,10 +54,10 @@ DSH owns branch creation. This plugin neither duplicates the fork protocol nor m
 
 ## Update and remove
 
-Update the prerelease channel:
+Update to the currently verified release:
 
 ```sh
-dsh plugin --profile web update dsh-session-tree@next
+dsh plugin --profile web update dsh-session-tree@0.2.0-beta.1
 ```
 
 Remove the plugin:
